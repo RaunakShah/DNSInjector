@@ -72,11 +72,16 @@ struct dns_header{
 	u_short ancount; 	/* number of resource records in answer */
 	u_short nscount; 	/* number of name server resource records in authority records section */
 	u_short arcount; 	/* number of resource records in additional records section */
-	char data[0];
+};
+
+struct dns_question_info{
+	u_short qtype;
+	u_short qclass;
 };
 
 struct dns_question{
-	u_char *question_section;
+	char qname[0];	
+	//struct dns_question_info *q;
 };
 
 void
@@ -88,121 +93,23 @@ print_payload(const u_char *payload, int len);
 void
 print_hex_ascii_line(const u_char *payload, int len, int offset);
 
-/*
- * print data in rows of 16 bytes: offset   hex   ascii
- *
- * 00000   47 45 54 20 2f 20 48 54  54 50 2f 31 2e 31 0d 0a   GET / HTTP/1.1..
- */
-	void
-print_hex_ascii_line(const u_char *payload, int len, int offset)
-{
-
-	int i;
-	int gap;
-	const u_char *ch;
-
-
-	/* hex */
-	ch = payload;
-	for(i = 0; i < len; i++) {
-		printf("%02x ", *ch);
-		ch++;
-	}
-	/* print space to handle line less than 8 bytes */
-	if (len < 8)
-		printf(" ");
-
-	/* fill hex gap with spaces if not full line */
-	if (len < 16) {
-		gap = 16 - len;
-		for (i = 0; i < gap; i++) {
-			printf("   ");
-		}
-	}
-	printf(" ");
-
-	/* ascii (if printable) */
-	ch = payload;
-	for(i = 0; i < len; i++) {
-		if (isprint(*ch))
-			printf("%c", *ch);
-		else
-			printf(".");
-		ch++;
-	}
-
-	printf("\n");
-
-	return;
-}
-
-/*
- * print packet payload data (avoid printing binary data)
- */
-void dns_ques(struct dns_question *dns){
-
-}
-void dns_head(u_char* payload , int len){
+void dns_head(struct dns_header* dns){
 	int i;
 	u_char *d;
-	struct dns_header *dns = (struct dns_header*)payload;
+	//struct dns_header *dns = (struct dns_header*)payload;
 	printf("ID: %d\n", ntohs(dns->id));
 	printf("%d\n", ntohs(dns->flags));
 	printf("qd: %d\n", ntohs(dns->qdcount));
-	printf("an: %hu\n", ntohs(dns->ancount));
-	printf("ns: %hu\n", dns->nscount);
-	printf("ar: %hu\n", dns->arcount);
+	printf("an: %d\n", ntohs(dns->ancount));
+	printf("ns: %d\n", ntohs(dns->nscount));
+	printf("ar: %d\n", ntohs(dns->arcount));
 //	d = (u_char *)(payload+(sizeof(struct dns_header)));
-	printf("name:");
-	for(i=0;i<sizeof(dns->data);i++)
-		printf("%hu\n", ntohs(dns->data[i]));	
-	printf("end");
+	//printf("name:\n");
+	//printf("%s\n", dns->data);
+	//printf("end\n");
 //	exit(1);
 }
 
-
-
-	void
-print_payload(const u_char *payload, int len)
-{
-
-	int len_rem = len;
-	int line_width = 16;			/* number of bytes per line */
-	int line_len;
-	int offset = 0;					/* zero-based offset counter */
-	const u_char *ch = payload;
-
-	if (len <= 0)
-		return;
-
-	/* data fits on one line */
-	if (len <= line_width) {
-		print_hex_ascii_line(ch, len, offset);
-		return;
-	}
-
-	/* data spans multiple lines */
-	for ( ;; ) {
-		/* compute current line length */
-		line_len = line_width % len_rem;
-		/* print line */
-		print_hex_ascii_line(ch, line_len, offset);
-		/* compute total remaining */
-		len_rem = len_rem - line_len;
-		/* shift pointer to remaining bytes to print */
-		ch = ch + line_len;
-		/* add offset */
-		offset = offset + line_width;
-		/* check if we have line width chars or less */
-		if (len_rem <= line_width) {
-			/* print last line and get out */
-			print_hex_ascii_line(ch, len_rem, offset);
-			break;
-		}
-	}
-
-	return;
-}
 
 
 
@@ -236,13 +143,17 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
 	const struct sniff_ip *ip;              /* The IP header */
 	char * payload;                    /* Packet payload */
 	const struct sniff_udp *udp;		/* UDP header */
+	const struct dns_header *dnsheader;
+	struct dns_question* dnsquestion;
+	struct dns_question_info* dnsinfo;
 	int size_ip;
 	int size_payload;
 	int size_udp;
 	int len;
 	int source_port;
 	int destination_port;
-
+	int qname_len;
+	char *qname;
 	/* define ethernet header */
 	ethernet = (struct sniff_ethernet*)(packet);
 
@@ -266,12 +177,12 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
 	switch(ip->ip_p) {
 		case IPPROTO_UDP:
 			udp = (struct sniff_udp*)(packet + SIZE_ETHERNET + size_ip);				
-			payload = (u_char *)(packet + SIZE_ETHERNET + size_ip + SIZE_UDP);
-			size_payload = ntohs(ip->ip_len) - (size_ip + SIZE_UDP);
+			dnsheader = (struct dns_header *)(packet + SIZE_ETHERNET + size_ip + SIZE_UDP);
+/*			size_payload = ntohs(ip->ip_len) - (size_ip + SIZE_UDP);
 			if(args!=NULL)
 				if(strstr((char *)(payload),(char *)( args))==NULL)
 					return;
-			//printf("Src Port: %d\n", ntohs(udp->src_port));
+*/			//printf("Src Port: %d\n", ntohs(udp->src_port));
 			printf("\n%s.%d ", outstr,header->ts.tv_usec);
 			printEthernetHeader(ethernet);
 			printf(" len %d\n", (ntohs(ip->ip_len)+SIZE_ETHERNET));
@@ -299,10 +210,27 @@ got_packet(u_char *args, const struct pcap_pkthdr *header, const u_char *packet)
 	}
 
 
-	if (size_payload > 0) {
-		dns_head(payload, size_payload);
-		//print_payload(payload, size_payload);
-	}	
+	//if (size_payload > 0) {
+	dnsquestion = (struct dns_question *)(packet + SIZE_ETHERNET + size_ip + SIZE_UDP + 12);
+	dns_head(dnsheader);
+	//qname = (char *)(packet + SIZE_ETHERNET + size_ip + SIZE_UDP + 12);
+	printf("name: %s\n", dnsquestion->qname);
+	qname_len = 0;
+	printf("before len\n");
+	while(dnsquestion->qname[qname_len] != '\0'){
+		printf("%c", dnsquestion->qname[qname_len]);
+		qname_len++;
+	}
+	qname_len++;
+	printf("size: %d\n", qname_len);
+	dnsinfo = (struct dns_question_info *)(packet + SIZE_ETHERNET + size_ip + SIZE_UDP + 12 + qname_len);
+	printf("qtype: %d\n", ntohs(dnsinfo->qtype));	
+	printf("qclass: %d\n", ntohs(dnsinfo->qclass));	
+	if (ntohs(dnsinfo->qtype) == 1){
+		/* DNS A record */
+		printf("Do your magic");
+	}
+
 
 	return;
 }
