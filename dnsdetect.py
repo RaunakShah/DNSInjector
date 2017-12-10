@@ -2,6 +2,7 @@ import sys
 import getopt
 import os
 import scapy.all as scapy
+import netifaces as ni
 
 count = 0
 hasher = {}
@@ -36,7 +37,7 @@ def handle(packet):
 			while i>0:
 				hasher[fields].append(packet.getlayer(scapy.DNSRR)[i].rdata)
 				i -= 1
-		if count == 5:
+		if count == 10:
 			print("Renewing hash")
 			hasher = {}
 			count = 0	
@@ -51,20 +52,20 @@ def hostfile_parser(hostfile):
 	return host
 	
 if __name__ == "__main__":
-	cmdLineOptions = "i:h:"
+	cmdLineOptions = "i:r:"
 	options, bpf  = getopt.getopt(sys.argv[1:], cmdLineOptions)
-	for op in options:
-		if "-i" in op[0]:
-			dev = op[1]
-		elif "-h" in op[0]:
-			hostfile = op[1]
-			hostfile_dict = hostfile_parser(hostfile)
+	dev = ni.gateways()['default'][ni.AF_INET][1]
 	filter = "port 53 " 
 	if bpf:
 		filter += str(bpf)
 	print(str(hostfile_dict))
-	print ("Spoofing DNS requests on %s" % (dev))
-	scapy.sniff(iface=dev, filter=filter, prn=handle)
+	for op in options:
+		if "-i" in op[0]:
+			dev = op[1]
+			scapy.sniff(iface=dev, filter=filter, prn=handle)
+		elif "-r" in op[0]:
+			tracefile = op[1]
+			scapy.sniff(offline = tracefile, filter = filter, prn = handle)
 
 
 
