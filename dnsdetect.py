@@ -10,26 +10,22 @@ hostfile_dict = {}
 def handle(packet):
 	global count
 	global hasher
+
+	# Check if current packet is a DNS response
 	if packet.haslayer(scapy.DNS) and packet.haslayer(scapy.DNSRR):
-		print("So far")
-		count+=1 
-		print(count)
-		#print(packet.getlayer(scapy.IP).src) 
-		#print(packet.getlayer(scapy.IP).dst+packet.getlayer(scapy.DNS).id) 
-		#print(packet.getlayer(scapy.DNS).qd.qname)
-		
+		count+=1
+
+		# Keys points of reference within a packet to detect poisoning attempts - source IP, destination IP, DNS ID, Queried name
+ 
 		fields = str(packet.getlayer(scapy.IP).src)+ '+' + str(packet.getlayer(scapy.IP).dst) + '+' + str(packet.getlayer(scapy.DNS).id) + '+' + str(packet.getlayer(scapy.DNS).qd.qname)
 		if fields in hasher.keys():
 			if [packet.getlayer(scapy.DNSRR).rdata] != hasher[fields]:
-				print("ALERT")
+				print("\nALERT - Possible DNS Poisoning attempt!")
 				srcip, dstip, dnsid, qname = fields.split('+')
-				print("ID "+ dnsid + "request" + qname)
-				print("Answer1 ")
-				print(hasher[fields])
-				print("Answer2 ")
-				print([packet.getlayer(scapy.DNSRR).rdata])
+				print("TxID "+ dnsid + " Request for " + qname)
+				print("Answer1: %s" % hasher[fields])
+				print("Answer2: %s" % [packet.getlayer(scapy.DNSRR).rdata])
 
-				print(fields)
 		else:
 			i = packet.getlayer(scapy.DNS).ancount
 			hasher[fields] = [packet.getlayer(scapy.DNSRR).rdata]
@@ -37,8 +33,9 @@ def handle(packet):
 			while i>0:
 				hasher[fields].append(packet.getlayer(scapy.DNSRR)[i].rdata)
 				i -= 1
+
 		if count == 10:
-			print("Renewing hash")
+		#	print("Renewing hash")
 			hasher = {}
 			count = 0	
 
@@ -55,10 +52,7 @@ if __name__ == "__main__":
 	cmdLineOptions = "i:r:"
 	options, bpf  = getopt.getopt(sys.argv[1:], cmdLineOptions)
 	dev = ni.gateways()['default'][ni.AF_INET][1]
-	filter = "port 53 " 
-	if bpf:
-		filter += str(bpf)
-	print(str(hostfile_dict))
+	filter = " ".join(bpf)#+= str(bpf)
 	for op in options:
 		if "-i" in op[0]:
 			dev = op[1]
